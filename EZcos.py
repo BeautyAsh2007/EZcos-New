@@ -209,16 +209,18 @@ if st.session_state.get("authentication_status"):
         if st.sidebar.button("Execute Action", use_container_width=True, type="secondary"):
             st.session_state.show_calculated_total = False # Reset calculation on modification
             
+                       # Action 1: Update existing records
             if action_mode == "🔄 Update Item":
                 if item_desc.strip() != "":
-                    st.session_state.boq_data.at[idx, "Item Description"] = item_desc
+                    st.session_state.boq_data.loc[idx, "Item Description"] = item_desc
                 if quantity > 0:
-                    st.session_state.boq_data.at[idx, "Quantity"] = quantity
+                    st.session_state.boq_data.loc[idx, "Quantity"] = quantity
                 if unit_cost > 0:
-                    st.session_state.boq_data.at[idx, "Unit Cost"] = unit_cost
+                    st.session_state.boq_data.loc[idx, "Unit Cost"] = unit_cost
                 
-                st.session_state.boq_data.at[idx, "Subtotal"] = (
-                    st.session_state.boq_data.at[idx, "Quantity"] * st.session_state.boq_data.at[idx, "Unit Cost"]
+                # Force item row subtotal to automatically update matching current parameters
+                st.session_state.boq_data.loc[idx, "Subtotal"] = (
+                    st.session_state.boq_data.loc[idx, "Quantity"] * st.session_state.boq_data.loc[idx, "Unit Cost"]
                 )
                 st.sidebar.success(f"Item No. {selected_no} successfully updated!")
                 st.rerun()
