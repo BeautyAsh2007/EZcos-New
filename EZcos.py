@@ -51,8 +51,6 @@ if not st.session_state.get("authentication_status"):
     
     with tab1:
         authenticator.login(location="main")
-        
-        # Pull login status from modern session variables
         authentication_status = st.session_state.get("authentication_status")
         
         if authentication_status == False:
@@ -75,7 +73,6 @@ if not st.session_state.get("authentication_status"):
             elif len(new_password) < 6:
                 st.error("Password must be at least 6 characters long.")
             else:
-                # Check if username exists using explicit schema binding
                 existing = supabase.schema("public").table("profiles").select("username").eq("username", new_username).execute()
                 if existing.data:
                     st.error("Username already taken. Please choose another.")
@@ -146,21 +143,20 @@ if st.session_state.get("authentication_status"):
 
     st.markdown("---")
     
-    # --- INPUT FIELDS & VALIDATION ---
+    # --- SIDEBAR INPUT FIELDS & VALIDATION ---
     st.sidebar.header("📋 Item Input Form")
     item_desc = st.sidebar.text_input("Item Description", placeholder="e.g., Concrete Works")
     unit = st.sidebar.selectbox("Unit", ["sqm", "pcs", "cu.m", "kg", "linear m"])
     quantity = st.sidebar.number_input("Quantity", min_value=0.0, step=1.0, value=0.0)
     unit_cost = st.sidebar.number_input("Unit Cost", min_value=0.0, step=1.0, value=0.0)
 
-    # --- BUTTON ACTIONS ---
     col1, col2 = st.sidebar.columns(2)
 
-    if col1.button("➕ Add", use_container_width=True):
+    if col1.button("➕ Add Item", use_container_width=True):
         if item_desc.strip() == "":
             st.sidebar.error("Description cannot be empty!")
         elif quantity <= 0 or unit_cost <= 0:
-            st.sidebar.error("Quantity and Unit Cost must be greater than 0!")
+            st.sidebar.error("Values must be greater than 0!")
         else:
             calculated_subtotal = quantity * unit_cost
             next_no = len(st.session_state.boq_data) + 1
@@ -175,38 +171,58 @@ if st.session_state.get("authentication_status"):
             st.session_state.boq_data = pd.concat([st.session_state.boq_data, new_row], ignore_index=True)
             st.rerun()
 
-    if col2.button("🧹 Clear", use_container_width=True):
+    if col2.button("🧹 Clear Table", use_container_width=True):
         st.session_state.boq_data = pd.DataFrame(
             columns=["Item No.", "Item Description", "Unit", "Quantity", "Unit Cost", "Subtotal"]
         )
         st.rerun()
 
+    # --- SIDEBAR EDITING ACTIONS PANEL ---
     if not st.session_state.boq_data.empty:
         st.sidebar.markdown("---")
-        st.sidebar.header("🔧 Modify Existing Items")
-        selected_no = st.sidebar.selectbox("Select Item No.", st.session_state.boq_data["Item No."].tolist())
+        st.sidebar.header("⚙️ Data Actions Panel")
         
-        if st.sidebar.button("🔄 Update Selected Item", use_container_width=True):
-            idx = st.session_state.boq_data[st.session_state.boq_data["Item No."] == selected_no].index
-            if item_desc.strip() != "":
-                st.session_state.boq_data.at[idx, "Item Description"] = item_desc
-            if quantity > 0:
-                st.session_state.boq_data.at[idx, "Quantity"] = quantity
-            if unit_cost > 0:
-                st.session_state.boq_data.at[idx, "Unit Cost"] = unit_cost
+        # Select target index row
+        selected_no = st.sidebar.selectbox("Select Target Item No.", st.session_state.boq_data["Item No."].tolist())
+        idx = st.session_state.boq_data[st.session_state.boq_data["Item No."] == selected_no].index
+        
+        # Dropdown selection for the specific workflow action requested
+        action_mode = st.sidebar.selectbox("Choose Action", ["🔄 Update Item", "❌ Delete Item", "🧮 Compute Total Cost"])
+        
+        if st.sidebar.button("Execute Action", use_container_width=True, type="primary"):
             
-            st.session_state.boq_data.at[idx, "Subtotal"] = (
-                st.session_state.boq_data.at[idx, "Quantity"] * st.session_state.boq_data.at[idx, "Unit Cost"]
-            )
-            st.success(f"Item {selected_no} updated!")
-            st.rerun()
+            # Action 1: Update existing records
+            if action_mode == "🔄 Update Item":
+                if item_desc.strip() != "":
+                    st.session_state.boq_data.at[idx, "Item Description"] = item_desc
+                if quantity > 0:
+                    st.session_state.boq_data.at[idx, "Quantity"] = quantity
+                if unit_cost > 0:
+                    st.session_state.boq_data.at[idx, "Unit Cost"] = unit_cost
+                
+                # Force item row subtotal to automatically update matching current parameters
+                st.session_state.boq_data.at[idx, "Subtotal"] = (
+                    st.session_state.boq_data.at[idx, "Quantity"] * st.session_state.boq_data.at[idx, "Unit Cost"]
+                )
+                st.sidebar.success(f"Item No. {selected_no} successfully updated!")
+                st.rerun()
+                
+            # Action 2: Completely purge record row
+            elif action_mode == "❌ Delete Item":
+                st.session_state.boq_data = st.session_state.boq_data[st.session_state.boq_data["Item No."] != selected_no].reset_index(drop=True)
+                st.session_state.boq_data["Item No."] = range(1, len(st.session_state.boq_data) + 1)
+                st.sidebar.success(f"Item No. {selected_no} dropped completely!")
+                st.rerun()
+                
+            # Action 3: Recalculate row math values
+            elif action_mode == "🧮 Compute Total Cost":
+                st.session_state.boq_data.at[idx, "Subtotal"] = (
+                    st.session_state.boq_data.at[idx, "Quantity"] * st.session_state.boq_data.at[idx, "Unit Cost"]
+                )
+                st.sidebar.success(f"Row {selected_no} recalculated successfully!")
+                st.rerun()
 
-        if st.sidebar.button("❌ Delete Selected Item", use_container_width=True):
-            st.session_state.boq_data = st.session_state.boq_data[st.session_state.boq_data["Item No."] != selected_no].reset_index(drop=True)
-            st.session_state.boq_data["Item No."] = range(1, len(st.session_state.boq_data) + 1)
-            st.rerun()
-
-    # --- MAIN DISPLAY SCREEN ---
+    # --- MAIN SCREEN COST SUMMARY METRIC ---
     grand_total = st.session_state.boq_data["Subtotal"].sum()
     st.metric(label="💰 Grand Total Project Cost", value=f"\u20b1{grand_total:,.2f}")
 
@@ -223,7 +239,9 @@ if st.session_state.get("authentication_status"):
         }
     )
 
+    # Automatically handle cell-by-cell edits on the main spreadsheet
     if not edited_df.equals(st.session_state.boq_data):
         edited_df["Subtotal"] = edited_df["Quantity"] * edited_df["Unit Cost"]
         st.session_state.boq_data = edited_df
         st.rerun()
+
