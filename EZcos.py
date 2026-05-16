@@ -125,7 +125,7 @@ if st.session_state.get("authentication_status"):
                 st.success(f"Project '{proj_name}' securely saved!")
                 st.rerun()
 
-    with dash_col2:
+       with dash_col2:
         st.subheader("📂 Reload Previous Calculations")
         response = supabase.schema("public").table("project_saves").select("project_name, boq_json").eq("username", username).execute()
         saved_projects = response.data
@@ -136,7 +136,19 @@ if st.session_state.get("authentication_status"):
             
             if st.button("Load Selected Project"):
                 chosen_data = next(p for p in saved_projects if p["project_name"] == selected_project)
-                restored_df = pd.read_json(chosen_data["boq_json"])
+                
+                # --- FIX APPLIED HERE: Wrap the JSON data in StringIO ---
+                import io
+                json_string = chosen_data["boq_json"]
+                
+                # Convert to string if Supabase already parsed it into a dict/list
+                if not isinstance(json_string, str):
+                    import json
+                    json_string = json.dumps(json_string)
+                    
+                restored_df = pd.read_json(io.StringIO(json_string))
+                # -------------------------------------------------------
+                
                 if not restored_df.empty:
                     restored_df = restored_df[["Item No.", "Item Description", "Unit", "Quantity", "Unit Cost", "Subtotal"]]
                 st.session_state.boq_data = restored_df
