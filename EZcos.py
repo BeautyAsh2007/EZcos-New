@@ -127,44 +127,54 @@ if st.session_state.get("authentication_status"):
 
     with dash_col2:
         st.subheader("📂 Reload Previous Calculations")
-        response = supabase.schema("public").table("project_saves").select("project_name, boq_json").eq("username", username).execute()
+        response = supabase.schema("public").table("project_saves").select("id, project_name, boq_json").eq("username", username).execute()
         saved_projects = response.data
         
         if saved_projects:
             proj_options = [p["project_name"] for p in saved_projects]
             selected_project = st.selectbox("Select a project to restore:", proj_options)
             
-            if st.button("Load Selected Project"):
-                chosen_data = next(p for p in saved_projects if p["project_name"] == selected_project)
-                
-                import io
-                json_string = chosen_data["boq_json"]
-                
-                if not isinstance(json_string, str):
-                    import json
-                    json_string = json.dumps(json_string)
+            # Put Load and Delete buttons side-by-side
+            btn_col1, btn_col2 = st.columns(2)
+            
+            with btn_col1:
+                if st.button("Load Selected Project", use_container_width=True, type="primary"):
+                    chosen_data = next(p for p in saved_projects if p["project_name"] == selected_project)
                     
-                restored_df = pd.read_json(io.StringIO(json_string))
-                
-                # --- FIX APPLIED HERE: Enforce standard structural fallback schemas ---
-                required_columns = ["Item No.", "Item Description", "Unit", "Quantity", "Unit Cost", "Subtotal"]
-                
-                if restored_df.empty:
-                    # If empty, give it the correct empty schema configuration skeleton
-                    restored_df = pd.DataFrame(columns=required_columns)
-                else:
-                    # Add any columns that might be missing from older saves
-                    for col in required_columns:
-                        if col not in restored_df.columns:
-                            restored_df[col] = 0 if col in ["Quantity", "Unit Cost", "Subtotal"] else ""
+                    import io
+                    json_string = chosen_data["boq_json"]
                     
-                    # Force exact column ordering to match what data_editor expects
-                    restored_df = restored_df[required_columns]
-                
-                st.session_state.boq_data = restored_df
-                st.session_state.show_calculated_total = False 
-                st.success(f"Successfully loaded '{selected_project}'!")
-                st.rerun()
+                    if not isinstance(json_string, str):
+                        import json
+                        json_string = json.dumps(json_string)
+                        
+                    restored_df = pd.read_json(io.StringIO(json_string))
+                    
+                    required_columns = ["Item No.", "Item Description", "Unit", "Quantity", "Unit Cost", "Subtotal"]
+                    
+                    if restored_df.empty:
+                        restored_df = pd.DataFrame(columns=required_columns)
+                    else:
+                        for col in required_columns:
+                            if col not in restored_df.columns:
+                                restored_df[col] = 0 if col in ["Quantity", "Unit Cost", "Subtotal"] else ""
+                        restored_df = restored_df[required_columns]
+                    
+                    st.session_state.boq_data = restored_df
+                    st.session_state.show_calculated_total = False 
+                    st.success(f"Successfully loaded '{selected_project}'!")
+                    st.rerun()
+            
+            with btn_col2:
+                # --- NEW FUNCTIONALITY: Delete project file from cloud storage ---
+                if st.button("❌ Delete Project", use_container_width=True):
+                    chosen_data = next(p for p in saved_projects if p["project_name"] == selected_project)
+                    
+                    # Execute deletion query directly matching on database Primary Key ID 
+                    supabase.schema("public").table("project_saves").delete().eq("id", chosen_data["id"]).execute()
+                    
+                    st.success(f"Project '{selected_project}' permanently deleted from cloud!")
+                    st.rerun()
         else:
             st.info("No saved projects found for your account.")
 
