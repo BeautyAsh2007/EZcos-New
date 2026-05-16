@@ -125,7 +125,7 @@ if st.session_state.get("authentication_status"):
                 st.success(f"Project '{proj_name}' securely saved!")
                 st.rerun()
 
-       with dash_col2:
+    with dash_col2:
         st.subheader("📂 Reload Previous Calculations")
         response = supabase.schema("public").table("project_saves").select("project_name, boq_json").eq("username", username).execute()
         saved_projects = response.data
