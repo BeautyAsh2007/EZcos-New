@@ -137,26 +137,37 @@ if st.session_state.get("authentication_status"):
             if st.button("Load Selected Project"):
                 chosen_data = next(p for p in saved_projects if p["project_name"] == selected_project)
                 
-                # --- FIX APPLIED HERE: Wrap the JSON data in StringIO ---
                 import io
                 json_string = chosen_data["boq_json"]
                 
-                # Convert to string if Supabase already parsed it into a dict/list
                 if not isinstance(json_string, str):
                     import json
                     json_string = json.dumps(json_string)
                     
                 restored_df = pd.read_json(io.StringIO(json_string))
-                # -------------------------------------------------------
                 
-                if not restored_df.empty:
-                    restored_df = restored_df[["Item No.", "Item Description", "Unit", "Quantity", "Unit Cost", "Subtotal"]]
+                # --- FIX APPLIED HERE: Enforce standard structural fallback schemas ---
+                required_columns = ["Item No.", "Item Description", "Unit", "Quantity", "Unit Cost", "Subtotal"]
+                
+                if restored_df.empty:
+                    # If empty, give it the correct empty schema configuration skeleton
+                    restored_df = pd.DataFrame(columns=required_columns)
+                else:
+                    # Add any columns that might be missing from older saves
+                    for col in required_columns:
+                        if col not in restored_df.columns:
+                            restored_df[col] = 0 if col in ["Quantity", "Unit Cost", "Subtotal"] else ""
+                    
+                    # Force exact column ordering to match what data_editor expects
+                    restored_df = restored_df[required_columns]
+                
                 st.session_state.boq_data = restored_df
-                st.session_state.show_calculated_total = False # Reset total display on load
+                st.session_state.show_calculated_total = False 
                 st.success(f"Successfully loaded '{selected_project}'!")
                 st.rerun()
         else:
             st.info("No saved projects found for your account.")
+
 
     st.markdown("---")
     
