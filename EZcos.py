@@ -101,13 +101,17 @@ if st.session_state.get("authentication_status"):
             columns=["Item No.", "Item Description", "Unit", "Quantity", "Unit Cost", "Subtotal"]
         )
 
+    # Initialize calculation flag state to hide total on fresh reloads
+    if "show_calculated_total" not in st.session_state:
+        st.session_state.show_calculated_total = False
+
     # --- PROJECT DASHBOARD MANAGEMENT BOX ---
-    st.markdown("### 🗄️ Project Dashboard Management")
+    st.markdown("Project Dashboard")
     dash_col1, dash_col2 = st.columns(2)
     
     with dash_col1:
         st.subheader("💾 Save Active Project")
-        proj_name = st.text_input("Enter Project Name to Save")
+        proj_name = st.text_input("Enter Project Name")
         if st.button("Save Current Table to Cloud"):
             if proj_name.strip() == "":
                 st.error("Please enter a valid project name.")
@@ -136,6 +140,7 @@ if st.session_state.get("authentication_status"):
                 if not restored_df.empty:
                     restored_df = restored_df[["Item No.", "Item Description", "Unit", "Quantity", "Unit Cost", "Subtotal"]]
                 st.session_state.boq_data = restored_df
+                st.session_state.show_calculated_total = False # Reset total display on load
                 st.success(f"Successfully loaded '{selected_project}'!")
                 st.rerun()
         else:
@@ -169,12 +174,14 @@ if st.session_state.get("authentication_status"):
                 "Subtotal": calculated_subtotal
             }])
             st.session_state.boq_data = pd.concat([st.session_state.boq_data, new_row], ignore_index=True)
+            st.session_state.show_calculated_total = False # Reset calculation output state
             st.rerun()
 
     if col2.button("🧹 Clear Table", use_container_width=True):
         st.session_state.boq_data = pd.DataFrame(
             columns=["Item No.", "Item Description", "Unit", "Quantity", "Unit Cost", "Subtotal"]
         )
+        st.session_state.show_calculated_total = False
         st.rerun()
 
     # --- SIDEBAR EDITING ACTIONS PANEL ---
@@ -182,16 +189,14 @@ if st.session_state.get("authentication_status"):
         st.sidebar.markdown("---")
         st.sidebar.header("⚙️ Data Actions Panel")
         
-        # Select target index row
         selected_no = st.sidebar.selectbox("Select Target Item No.", st.session_state.boq_data["Item No."].tolist())
         idx = st.session_state.boq_data[st.session_state.boq_data["Item No."] == selected_no].index
         
-        # Dropdown selection for the specific workflow action requested
-        action_mode = st.sidebar.selectbox("Choose Action", ["🔄 Update Item", "❌ Delete Item", "🧮 Compute Total Cost"])
+        action_mode = st.sidebar.selectbox("Choose Action", ["🔄 Update Item", "❌ Delete Item"])
         
-        if st.sidebar.button("Execute Action", use_container_width=True, type="primary"):
+        if st.sidebar.button("Execute Action", use_container_width=True, type="secondary"):
+            st.session_state.show_calculated_total = False # Reset calculation on modification
             
-            # Action 1: Update existing records
             if action_mode == "🔄 Update Item":
                 if item_desc.strip() != "":
                     st.session_state.boq_data.at[idx, "Item Description"] = item_desc
@@ -200,32 +205,19 @@ if st.session_state.get("authentication_status"):
                 if unit_cost > 0:
                     st.session_state.boq_data.at[idx, "Unit Cost"] = unit_cost
                 
-                # Force item row subtotal to automatically update matching current parameters
                 st.session_state.boq_data.at[idx, "Subtotal"] = (
                     st.session_state.boq_data.at[idx, "Quantity"] * st.session_state.boq_data.at[idx, "Unit Cost"]
                 )
                 st.sidebar.success(f"Item No. {selected_no} successfully updated!")
                 st.rerun()
                 
-            # Action 2: Completely purge record row
             elif action_mode == "❌ Delete Item":
                 st.session_state.boq_data = st.session_state.boq_data[st.session_state.boq_data["Item No."] != selected_no].reset_index(drop=True)
                 st.session_state.boq_data["Item No."] = range(1, len(st.session_state.boq_data) + 1)
                 st.sidebar.success(f"Item No. {selected_no} dropped completely!")
                 st.rerun()
-                
-            # Action 3: Recalculate row math values
-            elif action_mode == "🧮 Compute Total Cost":
-                st.session_state.boq_data.at[idx, "Subtotal"] = (
-                    st.session_state.boq_data.at[idx, "Quantity"] * st.session_state.boq_data.at[idx, "Unit Cost"]
-                )
-                st.sidebar.success(f"Row {selected_no} recalculated successfully!")
-                st.rerun()
 
-    # --- MAIN SCREEN COST SUMMARY METRIC ---
-    grand_total = st.session_state.boq_data["Subtotal"].sum()
-    st.metric(label="💰 Grand Total Project Cost", value=f"\u20b1{grand_total:,.2f}")
-
+    # --- MAIN SPREADSHEET VIEW ---
     st.markdown("### 📊 Bill of Quantities (BOQ) Spreadsheet Table")
     edited_df = st.data_editor(
         st.session_state.boq_data,
@@ -239,9 +231,28 @@ if st.session_state.get("authentication_status"):
         }
     )
 
-    # Automatically handle cell-by-cell edits on the main spreadsheet
     if not edited_df.equals(st.session_state.boq_data):
+        st.session_state.show_calculated_total = False # Reset calculations if direct spreadsheet grid edits happen
         edited_df["Subtotal"] = edited_df["Quantity"] * edited_df["Unit Cost"]
         st.session_state.boq_data = edited_df
         st.rerun()
+
+    # --- SEPARATED CALCULATION LOGIC SECTION ---
+    st.markdown("---")
+    calc_col1, calc_col2 = st.columns([1, 3])
+    
+    with calc_col1:
+        # Action button positioned cleanly down below the main spreadsheet view
+        if st.button("🧮 Compute Grand Total", use_container_width=True, type="primary"):
+            st.session_state.show_calculated_total = True
+            st.rerun()
+            
+    with calc_col2:
+        # Display cost summaries ONLY if the button above has been explicitly toggled
+        if st.session_state.show_calculated_total:
+            grand_total = st.session_state.boq_data["Subtotal"].sum()
+            st.metric(label="💰 Grand Total Project Cost", value=f"\u20b1{grand_total:,.2f}")
+        else:
+            st.info("Click 'Compute Grand Total' to calculate the total budget summation.")
+
 
